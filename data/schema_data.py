@@ -2,6 +2,8 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
     "Sales.Customer": (
         "Customer master table holding B2B and B2C references. "
         "CRITICAL RULE: This table does NOT have a Name column. "
+        "CRITICAL RULE: This table has NO address columns (no StateProvinceID, no AddressID, no City). "
+        "To find a customer's location, you MUST go through Person.BusinessEntityAddress → Person.Address → Person.StateProvince. "
         "If you need to display or group by a customer, you MUST use a LEFT JOIN on both Sales.Store and Person.Person. "
         "Use this exact logic in SELECT and GROUP BY: ISNULL(Store.Name, Person.FirstName + ' ' + Person.LastName) AS CustomerName.  Use this for customer-level order counting and grouping. Keywords: customer wise, total orders paid by customer, client volume."
     ),
@@ -847,6 +849,17 @@ BUSINESS_LOGIC: dict[str, str] = {
         "ON Sales.Customer.PersonID = Person.Person.BusinessEntityID. "
         "For phone numbers, JOIN Person.PersonPhone ON "
         "Person.Person.BusinessEntityID = Person.PersonPhone.BusinessEntityID."
+    ),
+    "customer_address_resolution": (
+        "Sales.Customer has NO address columns (no StateProvinceID, no AddressID, no City, no PostalCode). "
+        "To find a customer's location (country, state, city), follow this EXACT chain: "
+        "Sales.Customer → Person.Person (ON c.PersonID = p.BusinessEntityID) → "
+        "Person.BusinessEntityAddress (ON p.BusinessEntityID = bea.BusinessEntityID) → "
+        "Person.Address (ON bea.AddressID = a.AddressID) → "
+        "Person.StateProvince (ON a.StateProvinceID = sp.StateProvinceID) → "
+        "Person.CountryRegion (ON sp.CountryRegionCode = cr.CountryRegionCode). "
+        "Then filter on cr.Name (country), sp.Name (state), a.City (city), or a.PostalCode. "
+        "NEVER join Sales.Customer directly to Person.StateProvince or Person.Address — the FK does not exist."
     ),
 }
 

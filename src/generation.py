@@ -25,6 +25,7 @@ _SCHEMA_LOCK_RULES = r"""
 12. PRODUCT.CATEGORY JOINS: `Production.Product` does NOT have a `ProductCategoryID` column. It has `ProductSubcategoryID`. To reach ProductCategory, you MUST go through `Production.ProductSubcategory`: Product.ProductSubcategoryID -> ProductSubcategory.ProductSubcategoryID -> ProductSubcategory.ProductCategoryID -> ProductCategory.ProductCategoryID.
 13. SALESORDERDETAIL DATE: `Sales.SalesOrderDetail` does NOT have an `OrderDate` column. It has `SalesOrderID`. To filter sales by date, JOIN to `Sales.SalesOrderHeader` on SalesOrderID and use `SalesOrderHeader.OrderDate`.
 14. TRANSACTION HISTORY: `Production.TransactionHistory` has `TransactionDate`, not `OrderDate`. TransactionType: 'S'=Sale (links to SalesOrderHeader), 'W'=WorkOrder (links to WorkOrder), 'P'=PurchaseOrder.
+15. CUSTOMER ADDRESS RESOLUTION (MANDATORY): `Sales.Customer` has NO address columns — no `StateProvinceID`, no `AddressID`, no `City`, no `PostalCode`, nothing. You are FORBIDDEN from joining `Sales.Customer` directly to `Person.StateProvince`, `Person.Address`, or any address table. To find a customer's location (country, state, city, postal code), you MUST follow this exact chain: `Sales.Customer` → `Person.Person` ON `c.PersonID = p.BusinessEntityID` → `Person.BusinessEntityAddress` ON `p.BusinessEntityID = bea.BusinessEntityID` → `Person.Address` ON `bea.AddressID = a.AddressID` → `Person.StateProvince` ON `a.StateProvinceID = sp.StateProvinceID` → `Person.CountryRegion` ON `sp.CountryRegionCode = cr.CountryRegionCode`. Then filter on `cr.Name` (for country), `sp.Name` (for state), `a.City` (for city), or `a.PostalCode` (for postal code). For store (B2B) customers, replace the Person link with: `Sales.Customer` → `Sales.Store` ON `c.StoreID = s.BusinessEntityID` → `Person.BusinessEntityAddress` ON `s.BusinessEntityID = bea.BusinessEntityID` → same address chain. Use `UNION` if you need both individual and store customers.
 
 --- OUTPUT RULES ---
 1. Return ONLY pure, executable T-SQL code. No markdown, no explanations.
@@ -48,6 +49,7 @@ Interpret relative-time phrases relative to {anchor_date}.
 
 CRITICAL SCHEMA FACTS — NEVER VIOLATE:
 - Sales.Customer has NO Name column. Never use c.Name or Customer.Name.
+- Sales.Customer has NO address columns (no StateProvinceID, no AddressID, no City). NEVER join Sales.Customer directly to Person.StateProvince or Person.Address. Use the Person.BusinessEntityAddress → Person.Address → Person.StateProvince chain.
 - HumanResources.Employee has NO Name column — always JOIN to Person.Person for names.
 - Purchasing.Vendor uses BusinessEntityID as PK, NOT VendorID.
 - Sales.SalesOrderHeader.Status IN (2,5) for valid revenue — always apply this filter.

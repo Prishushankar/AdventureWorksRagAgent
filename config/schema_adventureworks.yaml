@@ -1130,12 +1130,16 @@ tables:
       B2B: StoreID IS NOT NULL, PersonID IS NULL → business/reseller store.
       AccountNumber is a computed, human-readable ID (e.g. 'AW00000001').
       TerritoryID links to the customer's sales region.
+      IMPORTANT: This table has NO address columns. To find a customer's location
+      (country, state, city), go through Person.BusinessEntityAddress → Person.Address
+      → Person.StateProvince → Person.CountryRegion.
     primary_key: CustomerID
     business_logic:
       - "B2C individual: PersonID IS NOT NULL AND StoreID IS NULL."
       - "B2B store: StoreID IS NOT NULL AND PersonID IS NULL."
       - "JOIN to Person.Person (via PersonID) for individual customer names."
       - "JOIN to Sales.Store (via StoreID) for business customer names."
+      - "NO address columns exist on this table. For location queries, go through Person.BusinessEntityAddress → Person.Address → Person.StateProvince → Person.CountryRegion."
     columns:
       CustomerID: { type: int (identity), nullable: false }
       PersonID:
