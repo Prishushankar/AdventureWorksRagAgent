@@ -1,0 +1,1858 @@
+# ============================================================
+# AdventureWorks 2022 — Complete Schema Registry
+# For Text-to-SQL / RAG Agent use
+#
+# Structure per table:
+#   description   — business purpose + key business rules
+#   primary_key   — PK column(s)
+#   columns       — name: { type, nullable, computed, fk, description }
+#   business_logic — query-time rules the agent must apply
+# ============================================================
+
+# ─────────────────────────────────────────────────────────
+# PERSON SCHEMA
+# Shared identity layer used by Sales, HR, and Purchasing
+# ─────────────────────────────────────────────────────────
+tables:
+
+  Person.BusinessEntity:
+    description: >
+      Root supertype table that issues a globally unique BusinessEntityID to every
+      legal entity in the system — persons, stores, vendors, and employees.
+      All other entity tables share this PK to prevent ID collisions.
+      Always JOIN through this table when resolving entity identity.
+    primary_key: BusinessEntityID
+    columns:
+      BusinessEntityID:
+        type: int (identity)
+        nullable: false
+        description: "Surrogate PK shared as FK by Person, Store, Vendor, Employee."
+      rowguid:
+        type: uniqueidentifier
+        nullable: false
+        computed: false
+        description: "ROWGUID for merge replication. Default: newid()."
+      ModifiedDate:
+        type: datetime
+        nullable: false
+        description: "Audit timestamp. Default: getdate()."
+
+  Person.Person:
+    description: >
+      Individual person master. Covers employees, sales reps, customers, vendor
+      contacts, and store contacts under a single table via PersonType.
+      PersonType codes: 'EM'=Employee, 'SP'=SalesPerson, 'SC'=StoreContact,
+      'IN'=IndividualCustomer, 'VC'=VendorContact, 'GC'=GeneralContact.
+      EmailPromotion: 0=No email, 1=AW only, 2=AW+partners.
+      BusinessEntityID is a shared PK/FK pointing to Person.BusinessEntity.
+    primary_key: BusinessEntityID
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.BusinessEntity.BusinessEntityID
+        description: "Shared PK — inherited from the BusinessEntity supertype."
+      PersonType:
+        type: nchar(2)
+        nullable: false
+        description: "Entity subtype: EM=Employee, SP=SalesPerson, SC=StoreContact, IN=IndividualCustomer, VC=VendorContact, GC=GeneralContact."
+      NameStyle:
+        type: bit
+        nullable: false
+        description: "0=Western name order (First Last), 1=Eastern order (Last First)."
+      Title:
+        type: nvarchar(8)
+        nullable: true
+        description: "Courtesy title (Mr., Ms., Dr., etc.)."
+      FirstName:
+        type: nvarchar(50)
+        nullable: false
+        description: "Given name."
+      MiddleName:
+        type: nvarchar(50)
+        nullable: true
+        description: "Middle name or initial."
+      LastName:
+        type: nvarchar(50)
+        nullable: false
+        description: "Family / surname."
+      Suffix:
+        type: nvarchar(10)
+        nullable: true
+        description: "Name suffix (Jr., Sr., III, etc.)."
+      EmailPromotion:
+        type: int
+        nullable: false
+        description: "0=No promo email, 1=AW promo, 2=AW+partner promo."
+      AdditionalContactInfo:
+        type: xml
+        nullable: true
+        description: "XML blob for extra contact data (social handles, fax, etc.)."
+      Demographics:
+        type: xml
+        nullable: true
+        description: "XML blob with purchase history and survey data for individual customers."
+      rowguid:
+        type: uniqueidentifier
+        nullable: false
+        description: "Replication GUID."
+      ModifiedDate:
+        type: datetime
+        nullable: false
+        description: "Audit timestamp."
+
+  Person.BusinessEntity:
+    description: "Root supertype issuing BusinessEntityID to all entity tables."
+    primary_key: BusinessEntityID
+    columns:
+      BusinessEntityID: { type: int (identity), nullable: false }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.Address:
+    description: >
+      Canonical postal address record shared across customers, employees, and vendors.
+      Never stores entity-specific data — linked via bridge tables
+      (BusinessEntityAddress, SalesOrderHeader.BillToAddressID, etc.).
+    primary_key: AddressID
+    columns:
+      AddressID:
+        type: int (identity)
+        nullable: false
+        description: "Surrogate PK."
+      AddressLine1:
+        type: nvarchar(60)
+        nullable: false
+        description: "First street address line."
+      AddressLine2:
+        type: nvarchar(60)
+        nullable: true
+        description: "Optional second line (suite, floor, etc.)."
+      City:
+        type: nvarchar(30)
+        nullable: false
+        description: "City name."
+      StateProvinceID:
+        type: int
+        nullable: false
+        fk: Person.StateProvince.StateProvinceID
+        description: "State or province — links to StateProvince for country resolution."
+      PostalCode:
+        type: nvarchar(15)
+        nullable: false
+        description: "ZIP or postal code."
+      rowguid:
+        type: uniqueidentifier
+        nullable: false
+        description: "Replication GUID."
+      ModifiedDate:
+        type: datetime
+        nullable: false
+        description: "Audit timestamp."
+
+  Person.AddressType:
+    description: >
+      Lookup for address category labels used in BusinessEntityAddress.
+      Values include: 'Billing', 'Home', 'Main Office', 'Primary', 'Shipping', 'Archive'.
+    primary_key: AddressTypeID
+    columns:
+      AddressTypeID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false, description: "Label: Billing, Shipping, Home, Main Office, etc." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.BusinessEntityAddress:
+    description: >
+      Many-to-many bridge linking any BusinessEntity (person/vendor/store)
+      to one or more postal addresses, each tagged with an AddressType.
+      This is the correct table for 'what address does entity X have?'
+    primary_key: [BusinessEntityID, AddressID, AddressTypeID]
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.BusinessEntity.BusinessEntityID
+        description: "Entity that owns the address."
+      AddressID:
+        type: int
+        nullable: false
+        fk: Person.Address.AddressID
+        description: "The physical postal address."
+      AddressTypeID:
+        type: int
+        nullable: false
+        fk: Person.AddressType.AddressTypeID
+        description: "Category of the address (Billing, Shipping, etc.)."
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.BusinessEntityContact:
+    description: >
+      Associates an organisation (BusinessEntity like a Store or Vendor)
+      with a named contact person and their role (ContactType).
+      Used to answer: 'who is the purchasing manager at vendor X?'
+    primary_key: [BusinessEntityID, PersonID, ContactTypeID]
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.BusinessEntity.BusinessEntityID
+        description: "The organisation being contacted."
+      PersonID:
+        type: int
+        nullable: false
+        fk: Person.Person.BusinessEntityID
+        description: "The person acting as the contact."
+      ContactTypeID:
+        type: int
+        nullable: false
+        fk: Person.ContactType.ContactTypeID
+        description: "Role of the contact (e.g. Purchasing Manager, Owner)."
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.ContactType:
+    description: >
+      Lookup of contact role labels used in BusinessEntityContact.
+      Examples: 'Owner', 'Purchasing Agent', 'Purchasing Manager',
+      'Technical Support', 'Marketing Manager'.
+    primary_key: ContactTypeID
+    columns:
+      ContactTypeID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false, description: "Role label." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.CountryRegion:
+    description: >
+      ISO 3166 country/region code lookup (e.g. 'US', 'CA', 'DE', 'GB').
+      Referenced by StateProvince and Sales.CountryRegionCurrency.
+    primary_key: CountryRegionCode
+    columns:
+      CountryRegionCode: { type: nvarchar(3), nullable: false, description: "ISO 3166 code." }
+      Name: { type: nvarchar(50), nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.StateProvince:
+    description: >
+      State and province lookup. References both CountryRegion (for geography)
+      and Sales.SalesTerritory (for sales reporting).
+      IsOnlyStateProvinceFlag=1 means the country has only one province entry.
+    primary_key: StateProvinceID
+    columns:
+      StateProvinceID: { type: int (identity), nullable: false }
+      StateProvinceCode: { type: nchar(3), nullable: false, description: "Abbreviated state/province code." }
+      CountryRegionCode:
+        type: nvarchar(3)
+        nullable: false
+        fk: Person.CountryRegion.CountryRegionCode
+        description: "Country this province belongs to."
+      IsOnlyStateProvinceFlag:
+        type: bit
+        nullable: false
+        description: "1 = country has a single province row (e.g. some small nations)."
+      Name: { type: nvarchar(50), nullable: false }
+      TerritoryID:
+        type: int
+        nullable: false
+        fk: Sales.SalesTerritory.TerritoryID
+        description: "Sales territory covering this state/province."
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.EmailAddress:
+    description: >
+      Stores one or more email addresses per Person. A person may have
+      multiple active emails (one row each). Always JOIN via BusinessEntityID.
+    primary_key: [BusinessEntityID, EmailAddressID]
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.Person.BusinessEntityID
+        description: "Person who owns this email."
+      EmailAddressID: { type: int (identity), nullable: false }
+      EmailAddress: { type: nvarchar(50), nullable: true, description: "The email address string." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.PersonPhone:
+    description: >
+      Phone numbers for Person records, each tagged with a PhoneNumberType
+      (Cell, Home, Work). One person may have multiple phone entries.
+    primary_key: [BusinessEntityID, PhoneNumber, PhoneNumberTypeID]
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.Person.BusinessEntityID
+        description: "Person who owns this number."
+      PhoneNumber: { type: nvarchar(25), nullable: false }
+      PhoneNumberTypeID:
+        type: int
+        nullable: false
+        fk: Person.PhoneNumberType.PhoneNumberTypeID
+        description: "Cell, Home, or Work."
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.PhoneNumberType:
+    description: "Lookup for phone categories: 'Cell', 'Home', 'Work'."
+    primary_key: PhoneNumberTypeID
+    columns:
+      PhoneNumberTypeID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false, description: "Cell | Home | Work." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Person.Password:
+    description: >
+      Hashed credential store for Person accounts used by the AW e-commerce site.
+      Stores a salted SHA1 hash (PasswordHash) and salt (PasswordSalt). Never plain text.
+    primary_key: BusinessEntityID
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.Person.BusinessEntityID
+        description: "Person whose password is stored."
+      PasswordHash: { type: varchar(128), nullable: false, description: "SHA1 hash of the salted password." }
+      PasswordSalt: { type: varchar(10), nullable: false, description: "Random salt prepended before hashing." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+# ─────────────────────────────────────────────────────────
+# HUMAN RESOURCES SCHEMA
+# ─────────────────────────────────────────────────────────
+
+  HumanResources.Department:
+    description: >
+      Lookup of organisational departments at Adventure Works Cycles.
+      Each department belongs to a GroupName (e.g. 'Research and Development',
+      'Sales and Marketing', 'Manufacturing'). Used to group employees.
+    primary_key: DepartmentID
+    columns:
+      DepartmentID: { type: smallint (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false, description: "Department name (e.g. Engineering, Finance)." }
+      GroupName: { type: nvarchar(50), nullable: false, description: "Higher-level group (e.g. Sales and Marketing)." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  HumanResources.Employee:
+    description: >
+      Core employee master. Stores network login, national ID, job title, hire date,
+      demographics, and leave balances. IMPORTANT: Employee does NOT store the
+      person's name — JOIN to Person.Person on BusinessEntityID to get FirstName/LastName.
+      Self-references via ManagerID for the org-chart hierarchy.
+      SalariedFlag: 0=Hourly (non-exempt), 1=Salaried (exempt).
+      CurrentFlag: 0=Inactive, 1=Active. Always filter CurrentFlag=1 for headcount queries.
+      Gender: 'M'=Male, 'F'=Female. MaritalStatus: 'M'=Married, 'S'=Single.
+    primary_key: BusinessEntityID
+    business_logic:
+      - "JOIN HumanResources.Employee e JOIN Person.Person p ON e.BusinessEntityID = p.BusinessEntityID to get names."
+      - "Filter CurrentFlag = 1 for active employees only."
+      - "ManagerID is self-referencing FK — use recursive CTE or dbo.uspGetEmployeeManagers for hierarchy."
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.Person.BusinessEntityID
+        description: "Shared PK/FK — Employee inherits ID from BusinessEntity/Person."
+      NationalIDNumber: { type: nvarchar(15), nullable: false, description: "Unique national ID (SSN equivalent). Unique constraint." }
+      LoginID: { type: nvarchar(256), nullable: false, description: "Network/domain login (e.g. adventure-works\\john0). Unique constraint." }
+      OrganizationNode: { type: hierarchyid, nullable: true, description: "Position in the org-chart hierarchy. Use GetAncestor/GetDescendant for traversal." }
+      OrganizationLevel:
+        type: smallint
+        nullable: true
+        computed: true
+        description: "Computed from OrganizationNode.GetLevel() — depth in org chart."
+      JobTitle: { type: nvarchar(50), nullable: false, description: "Work title (e.g. 'Design Engineer', 'Sales Representative')." }
+      BirthDate: { type: date, nullable: false }
+      MaritalStatus: { type: nchar(1), nullable: false, description: "M=Married, S=Single." }
+      Gender: { type: nchar(1), nullable: false, description: "M=Male, F=Female." }
+      HireDate: { type: date, nullable: false }
+      SalariedFlag: { type: bit, nullable: false, description: "0=Hourly non-exempt, 1=Salaried exempt." }
+      VacationHours: { type: smallint, nullable: false, description: "Remaining vacation hours." }
+      SickLeaveHours: { type: smallint, nullable: false, description: "Remaining sick leave hours." }
+      CurrentFlag: { type: bit, nullable: false, description: "0=Terminated/Inactive, 1=Active. Filter on 1 for headcount." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  HumanResources.EmployeeDepartmentHistory:
+    description: >
+      Full audit trail of every department and shift assignment per employee.
+      EndDate = NULL means this IS the current assignment.
+      To find current department: WHERE EndDate IS NULL.
+      To find headcount history: filter by StartDate/EndDate range.
+    primary_key: [BusinessEntityID, StartDate, DepartmentID, ShiftID]
+    business_logic:
+      - "EndDate IS NULL = current active assignment. Always add this filter for 'current department' queries."
+      - "One employee can appear in multiple rows for past transfers — use EndDate IS NULL for current."
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: HumanResources.Employee.BusinessEntityID
+        description: "Employee whose assignment is recorded."
+      DepartmentID:
+        type: smallint
+        nullable: false
+        fk: HumanResources.Department.DepartmentID
+        description: "Department assigned to."
+      ShiftID:
+        type: tinyint
+        nullable: false
+        fk: HumanResources.Shift.ShiftID
+        description: "Work shift during this assignment."
+      StartDate: { type: date, nullable: false, description: "Date the assignment started." }
+      EndDate: { type: date, nullable: true, description: "Date the assignment ended. NULL = currently active." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  HumanResources.EmployeePayHistory:
+    description: >
+      Time-series pay history — one row per pay rate change per employee.
+      Current pay = MAX(RateChangeDate) per BusinessEntityID.
+      PayFrequency: 1=Monthly, 2=Bi-weekly.
+      JOIN to Employee and Person to get employee name alongside pay.
+    primary_key: [BusinessEntityID, RateChangeDate]
+    business_logic:
+      - "Current rate = row with MAX(RateChangeDate) WHERE EndDate IS NULL (no EndDate column — use MAX)."
+      - "JOIN to HumanResources.Employee then Person.Person to get employee names."
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: HumanResources.Employee.BusinessEntityID
+        description: "Employee whose pay rate is recorded."
+      RateChangeDate: { type: datetime, nullable: false, description: "Date the new rate took effect." }
+      Rate: { type: money, nullable: false, description: "Hourly or monthly salary rate." }
+      PayFrequency: { type: tinyint, nullable: false, description: "1=Monthly salary, 2=Bi-weekly salary." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  HumanResources.JobCandidate:
+    description: >
+      Résumés submitted to HR by external job applicants, stored as XML.
+      If the candidate was subsequently hired, BusinessEntityID is populated
+      linking to HumanResources.Employee. NULL BusinessEntityID = not yet hired.
+    primary_key: JobCandidateID
+    columns:
+      JobCandidateID: { type: int (identity), nullable: false }
+      BusinessEntityID:
+        type: int
+        nullable: true
+        fk: HumanResources.Employee.BusinessEntityID
+        description: "Populated if candidate was hired; NULL if not yet an employee."
+      Resume: { type: xml, nullable: true, description: "Candidate resume in XML format." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  HumanResources.Shift:
+    description: >
+      Work shift lookup — defines the three shifts at Adventure Works:
+      Day (07:00–15:00), Evening (15:00–23:00), Night (23:00–07:00).
+      Referenced by EmployeeDepartmentHistory for scheduling.
+    primary_key: ShiftID
+    columns:
+      ShiftID: { type: tinyint (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false, description: "Shift name: Day, Evening, or Night." }
+      StartTime: { type: time, nullable: false, description: "Shift start time." }
+      EndTime: { type: time, nullable: false, description: "Shift end time." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+# ─────────────────────────────────────────────────────────
+# PRODUCTION SCHEMA
+# ─────────────────────────────────────────────────────────
+
+  Production.BillOfMaterials:
+    description: >
+      Recursive BOM defining which sub-components (ComponentID) build an assembly
+      (ProductAssemblyID). BOMLevel=0 means finished good with no parent.
+      StartDate/EndDate define validity windows for component substitutions.
+      Use dbo.uspGetBillOfMaterials stored procedure or a recursive CTE
+      anchored on ProductAssemblyID IS NULL to unroll the full tree.
+    primary_key: BillOfMaterialsID
+    business_logic:
+      - "ProductAssemblyID IS NULL = top-level finished good (no parent)."
+      - "Filter WHERE StartDate <= GETDATE() AND (EndDate IS NULL OR EndDate > GETDATE()) for current BOM."
+      - "Use recursive CTE or dbo.uspGetBillOfMaterials for multi-level explosion."
+    columns:
+      BillOfMaterialsID: { type: int (identity), nullable: false }
+      ProductAssemblyID:
+        type: int
+        nullable: true
+        fk: Production.Product.ProductID
+        description: "Parent assembly product. NULL = top-level finished good."
+      ComponentID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+        description: "Child component or raw material required."
+      StartDate: { type: datetime, nullable: false, description: "Date component became valid in this BOM." }
+      EndDate: { type: datetime, nullable: true, description: "Date component was replaced or removed. NULL = still active." }
+      UnitMeasureCode:
+        type: nchar(3)
+        nullable: false
+        fk: Production.UnitMeasure.UnitMeasureCode
+        description: "Unit for PerAssemblyQty (e.g. EA, LB, OZ)."
+      BOMLevel: { type: smallint, nullable: false, description: "Depth in the BOM hierarchy. 0 = finished good." }
+      PerAssemblyQty: { type: decimal(8,2), nullable: false, description: "Quantity of component required per parent assembly." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.Culture:
+    description: "Locale/language code lookup for product description localisation (e.g. 'en', 'fr', 'zh-cht', 'ar', 'he', 'th')."
+    primary_key: CultureID
+    columns:
+      CultureID: { type: nchar(6), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.Document:
+    description: >
+      Engineering and marketing documents (CAD specs, assembly instructions) in a
+      hierarchical folder structure via DocumentNode (hierarchyid).
+      FolderFlag=1 means this is a folder node (no document content).
+      Status: 1=Pending Approval, 2=Approved, 3=Obsolete.
+      Owner links to an Employee (document responsible person).
+    primary_key: DocumentNode
+    columns:
+      DocumentNode: { type: hierarchyid, nullable: false, description: "PK — hierarchical path node." }
+      DocumentLevel: { type: smallint, nullable: true, computed: true, description: "Computed from DocumentNode.GetLevel()." }
+      Title: { type: nvarchar(50), nullable: false }
+      Owner:
+        type: int
+        nullable: false
+        fk: HumanResources.Employee.BusinessEntityID
+        description: "Employee responsible for this document."
+      FolderFlag: { type: bit, nullable: false, description: "0=Document, 1=Folder node." }
+      FileName: { type: nvarchar(400), nullable: false }
+      FileExtension: { type: nvarchar(8), nullable: false }
+      Revision: { type: nchar(5), nullable: false, description: "Document revision number." }
+      ChangeNumber: { type: int, nullable: false, description: "Engineering change order number." }
+      Status: { type: tinyint, nullable: false, description: "1=Pending Approval, 2=Approved, 3=Obsolete." }
+      DocumentSummary: { type: nvarchar(max), nullable: true }
+      Document: { type: varbinary(max), nullable: true, description: "Binary document content." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.Illustration:
+    description: "XML-stored bicycle part diagrams linked to ProductModel for catalogues and assembly docs."
+    primary_key: IllustrationID
+    columns:
+      IllustrationID: { type: int (identity), nullable: false }
+      Diagram: { type: xml, nullable: true, description: "SVG or XML diagram data." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.Location:
+    description: >
+      Inventory and manufacturing locations within the plant
+      (e.g. 'Tool Crib', 'Frame Storage', 'Paint Shop', 'Subassembly').
+      Availability = shelf space in machine-hours available per week.
+      CostRate = cost per machine-hour at this location.
+    primary_key: LocationID
+    columns:
+      LocationID: { type: smallint (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      CostRate: { type: smallmoney, nullable: false, description: "Standard hourly machine rate for this location." }
+      Availability: { type: decimal(8,2), nullable: false, description: "Available capacity in hours per week." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.Product:
+    description: >
+      Central product master — covers both manufactured goods and purchased components.
+      MakeFlag=1 → manufactured in-house (has WorkOrders).
+      MakeFlag=0 → purchased externally (has PurchaseOrderDetail rows).
+      FinishedGoodsFlag=1 → saleable to customers; 0 → internal component only.
+      ProductLine: 'R'=Road, 'M'=Mountain, 'T'=Touring, 'S'=Standard.
+      Style: 'W'=Womens, 'M'=Mens, 'U'=Universal.
+      Class: 'H'=High, 'M'=Medium, 'L'=Low.
+      ListPrice and StandardCost on this table are snapshots —
+      query ProductListPriceHistory and ProductCostHistory for time-series.
+      SellEndDate IS NOT NULL means the product is discontinued for sale.
+    primary_key: ProductID
+    business_logic:
+      - "FinishedGoodsFlag=1 filter required for customer-facing product queries."
+      - "MakeFlag=1 → links to WorkOrder. MakeFlag=0 → links to PurchaseOrderDetail."
+      - "SellEndDate IS NULL → still available for sale."
+      - "Use ProductListPriceHistory (EndDate IS NULL) for current list price, not Product.ListPrice."
+    columns:
+      ProductID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      ProductNumber: { type: nvarchar(25), nullable: false, description: "Internal SKU code (e.g. BA-8327). Unique." }
+      MakeFlag: { type: bit, nullable: false, description: "1=Manufactured in-house, 0=Purchased externally." }
+      FinishedGoodsFlag: { type: bit, nullable: false, description: "1=Saleable finished good, 0=Internal component/subassembly." }
+      Color: { type: nvarchar(15), nullable: true }
+      SafetyStockLevel: { type: smallint, nullable: false, description: "Minimum inventory quantity before restocking is triggered." }
+      ReorderPoint: { type: smallint, nullable: false, description: "Inventory level at which a purchase or work order is placed." }
+      StandardCost: { type: money, nullable: false, description: "Snapshot standard manufacturing cost. Use ProductCostHistory for history." }
+      ListPrice: { type: money, nullable: false, description: "Snapshot retail list price. Use ProductListPriceHistory for history." }
+      Size: { type: nvarchar(5), nullable: true }
+      SizeUnitMeasureCode:
+        type: nchar(3)
+        nullable: true
+        fk: Production.UnitMeasure.UnitMeasureCode
+        description: "Unit for the Size column (CM, IN)."
+      Weight: { type: decimal(8,2), nullable: true }
+      WeightUnitMeasureCode:
+        type: nchar(3)
+        nullable: true
+        fk: Production.UnitMeasure.UnitMeasureCode
+        description: "Unit for the Weight column (LB, G)."
+      DaysToManufacture: { type: int, nullable: false, description: "Lead time in days to manufacture this product." }
+      ProductLine: { type: nchar(2), nullable: true, description: "R=Road, M=Mountain, T=Touring, S=Standard." }
+      Class: { type: nchar(2), nullable: true, description: "H=High end, M=Medium, L=Low end." }
+      Style: { type: nchar(2), nullable: true, description: "W=Womens, M=Mens, U=Universal." }
+      ProductSubcategoryID:
+        type: int
+        nullable: true
+        fk: Production.ProductSubcategory.ProductSubcategoryID
+        description: "Subcategory grouping. NULL for raw components not in the catalogue."
+      ProductModelID:
+        type: int
+        nullable: true
+        fk: Production.ProductModel.ProductModelID
+        description: "Model family this product variant belongs to."
+      SellStartDate: { type: datetime, nullable: false, description: "Date from which this product can be sold." }
+      SellEndDate: { type: datetime, nullable: true, description: "Date after which this product cannot be sold. NULL = still active." }
+      DiscontinuedDate: { type: datetime, nullable: true, description: "Date the product was fully discontinued from production." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductCategory:
+    description: "Top-level product grouping: 'Bikes', 'Components', 'Clothing', 'Accessories'."
+    primary_key: ProductCategoryID
+    columns:
+      ProductCategoryID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductSubcategory:
+    description: >
+      Second-level product grouping beneath ProductCategory.
+      Examples: 'Mountain Bikes', 'Road Frames', 'Helmets', 'Gloves'.
+    primary_key: ProductSubcategoryID
+    columns:
+      ProductSubcategoryID: { type: int (identity), nullable: false }
+      ProductCategoryID:
+        type: int
+        nullable: false
+        fk: Production.ProductCategory.ProductCategoryID
+        description: "Parent category."
+      Name: { type: nvarchar(50), nullable: false }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductModel:
+    description: >
+      Product model grouping (e.g. 'Road-150', 'Mountain-500', 'Touring-1000').
+      CatalogDescription stores XML marketing specs (frame material, gear count, etc.).
+      Instructions stores XML assembly routing steps.
+    primary_key: ProductModelID
+    columns:
+      ProductModelID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      CatalogDescription: { type: xml, nullable: true, description: "XML marketing catalogue spec for this model." }
+      Instructions: { type: xml, nullable: true, description: "XML manufacturing assembly instructions." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductDescription:
+    description: "Localised free-text product descriptions, one per language. Joined through ProductModelProductDescriptionCulture."
+    primary_key: ProductDescriptionID
+    columns:
+      ProductDescriptionID: { type: int (identity), nullable: false }
+      Description: { type: nvarchar(400), nullable: false }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductModelProductDescriptionCulture:
+    description: >
+      Three-way bridge: links a ProductModel to a ProductDescription in a specific Culture.
+      Required for multi-language product catalogue queries.
+      JOIN: ProductModel → this table → ProductDescription + Culture.
+    primary_key: [ProductModelID, ProductDescriptionID, CultureID]
+    columns:
+      ProductModelID:
+        type: int
+        nullable: false
+        fk: Production.ProductModel.ProductModelID
+      ProductDescriptionID:
+        type: int
+        nullable: false
+        fk: Production.ProductDescription.ProductDescriptionID
+      CultureID:
+        type: nchar(6)
+        nullable: false
+        fk: Production.Culture.CultureID
+        description: "Language of the description."
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductModelIllustration:
+    description: "Bridge linking ProductModel records to Illustration diagrams."
+    primary_key: [ProductModelID, IllustrationID]
+    columns:
+      ProductModelID:
+        type: int
+        nullable: false
+        fk: Production.ProductModel.ProductModelID
+      IllustrationID:
+        type: int
+        nullable: false
+        fk: Production.Illustration.IllustrationID
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductCostHistory:
+    description: >
+      Time-series of standard manufacturing cost changes per product.
+      Current cost = row WHERE EndDate IS NULL.
+      Use this (not Product.StandardCost) for accurate historical cost analysis.
+    primary_key: [ProductID, StartDate]
+    business_logic:
+      - "Current cost = WHERE EndDate IS NULL per ProductID."
+    columns:
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      StartDate: { type: datetime, nullable: false }
+      EndDate: { type: datetime, nullable: true, description: "NULL = current active cost." }
+      StandardCost: { type: money, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductListPriceHistory:
+    description: >
+      Audit of retail list price changes per product over time.
+      Current price = row WHERE EndDate IS NULL.
+      Prefer this over Product.ListPrice for accurate pricing queries.
+    primary_key: [ProductID, StartDate]
+    business_logic:
+      - "Current list price = WHERE EndDate IS NULL per ProductID."
+    columns:
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      StartDate: { type: datetime, nullable: false }
+      EndDate: { type: datetime, nullable: true, description: "NULL = current active price." }
+      ListPrice: { type: money, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductInventory:
+    description: >
+      Current on-hand inventory per product per storage Location.
+      Shelf and Bin provide precise warehouse coordinates.
+      Quantity is adjusted after each WorkOrder completion or purchase receipt.
+      To get total on-hand for a product: SUM(Quantity) GROUP BY ProductID.
+    primary_key: [ProductID, LocationID]
+    business_logic:
+      - "Total stock across all locations = SUM(Quantity) GROUP BY ProductID."
+      - "LocationID=6 is 'Miscellaneous Storage' — used by ufnGetStock function."
+    columns:
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      LocationID:
+        type: smallint
+        nullable: false
+        fk: Production.Location.LocationID
+      Shelf: { type: nvarchar(10), nullable: false, description: "Physical shelf label." }
+      Bin: { type: tinyint, nullable: false, description: "Bin number within the shelf." }
+      Quantity: { type: smallint, nullable: false, description: "Current on-hand units." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductDocument:
+    description: "Bridge table linking products to their engineering/marketing documents."
+    primary_key: [ProductID, DocumentNode]
+    columns:
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      DocumentNode:
+        type: hierarchyid
+        nullable: false
+        fk: Production.Document.DocumentNode
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductPhoto:
+    description: "Product photos stored as binary blobs — thumbnail and full-size — with filename captions."
+    primary_key: ProductPhotoID
+    columns:
+      ProductPhotoID: { type: int (identity), nullable: false }
+      ThumbNailPhoto: { type: varbinary(max), nullable: true }
+      ThumbnailPhotoFileName: { type: nvarchar(50), nullable: true }
+      LargePhoto: { type: varbinary(max), nullable: true }
+      LargePhotoFileName: { type: nvarchar(50), nullable: true }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductProductPhoto:
+    description: >
+      Bridge linking products to their photos.
+      Primary=1 (note: column name is [Primary]) denotes the hero/main image.
+    primary_key: [ProductID, ProductPhotoID]
+    columns:
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      ProductPhotoID:
+        type: int
+        nullable: false
+        fk: Production.ProductPhoto.ProductPhotoID
+      Primary:
+        type: bit
+        nullable: false
+        description: "1 = hero/main product image."
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ProductReview:
+    description: >
+      Customer-submitted product reviews with star ratings (1–5) and free-text comments.
+      EmailAddress captures the reviewer identity.
+      ReviewDate is auto-populated on insert.
+    primary_key: ProductReviewID
+    columns:
+      ProductReviewID: { type: int (identity), nullable: false }
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      ReviewerName: { type: nvarchar(50), nullable: false }
+      ReviewDate: { type: datetime, nullable: false, description: "Auto-set to GETDATE() on insert." }
+      EmailAddress: { type: nvarchar(50), nullable: false }
+      Rating: { type: int, nullable: false, description: "Star rating 1 (worst) to 5 (best)." }
+      Comments: { type: nvarchar(3850), nullable: true }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.ScrapReason:
+    description: >
+      Lookup of reasons why work order quantity was scrapped
+      (e.g. 'Paint failure', 'Drill size too large', 'Thermoform temperature').
+    primary_key: ScrapReasonID
+    columns:
+      ScrapReasonID: { type: smallint (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.TransactionHistory:
+    description: >
+      Running ledger of every inventory-impacting transaction.
+      TransactionType: 'W'=WorkOrder (production output),
+      'S'=SalesOrder (outbound shipment), 'P'=PurchaseOrder (inbound receipt).
+      ReferenceOrderID links to the source order ID in its respective table.
+      ActualCost and Quantity record the financial and physical impact.
+    primary_key: TransactionID
+    business_logic:
+      - "TransactionType 'W' → ReferenceOrderID = Production.WorkOrder.WorkOrderID."
+      - "TransactionType 'S' → ReferenceOrderID = Sales.SalesOrderHeader.SalesOrderID."
+      - "TransactionType 'P' → ReferenceOrderID = Purchasing.PurchaseOrderHeader.PurchaseOrderID."
+    columns:
+      TransactionID: { type: int (identity), nullable: false }
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      ReferenceOrderID: { type: int, nullable: false, description: "ID of the source order — type depends on TransactionType." }
+      ReferenceOrderLineID: { type: int, nullable: false, description: "Line item within the source order." }
+      TransactionDate: { type: datetime, nullable: false }
+      TransactionType: { type: nchar(1), nullable: false, description: "W=WorkOrder, S=SalesOrder, P=PurchaseOrder." }
+      Quantity: { type: int, nullable: false }
+      ActualCost: { type: money, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.TransactionHistoryArchive:
+    description: >
+      Archived rows moved out of TransactionHistory to keep the live table lean.
+      Identical schema to TransactionHistory — same columns, same TransactionType codes.
+      Query both tables (UNION ALL) for complete historical analysis.
+    primary_key: TransactionID
+    columns:
+      TransactionID: { type: int, nullable: false }
+      ProductID: { type: int, nullable: false, fk: Production.Product.ProductID }
+      ReferenceOrderID: { type: int, nullable: false }
+      ReferenceOrderLineID: { type: int, nullable: false }
+      TransactionDate: { type: datetime, nullable: false }
+      TransactionType: { type: nchar(1), nullable: false, description: "W=WorkOrder, S=SalesOrder, P=PurchaseOrder." }
+      Quantity: { type: int, nullable: false }
+      ActualCost: { type: money, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.UnitMeasure:
+    description: >
+      Lookup for unit-of-measure codes.
+      Common codes: 'EA'=Each, 'LB'=Pounds, 'OZ'=Ounces, 'G'=Grams,
+      'KG'=Kilograms, 'CM'=Centimetres, 'IN'=Inches, 'ML'=Millilitres.
+    primary_key: UnitMeasureCode
+    columns:
+      UnitMeasureCode: { type: nchar(3), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.WorkOrder:
+    description: >
+      Manufacturing work orders for in-house product production.
+      Business rule: StockedQty = OrderQty - ScrappedQty (computed).
+      ScrappedQty > 0 → ScrapReasonID must be populated.
+      Only products with MakeFlag=1 have WorkOrders.
+    primary_key: WorkOrderID
+    business_logic:
+      - "StockedQty is a computed column: OrderQty - ScrappedQty."
+      - "ScrappedQty > 0 requires ScrapReasonID to be set."
+    columns:
+      WorkOrderID: { type: int (identity), nullable: false }
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+        description: "Product being manufactured."
+      OrderQty: { type: int, nullable: false, description: "Quantity ordered for production." }
+      StockedQty:
+        type: int
+        nullable: false
+        computed: true
+        description: "Computed: OrderQty - ScrappedQty. Actual quantity added to inventory."
+      ScrappedQty: { type: smallint, nullable: false, description: "Quantity scrapped during production." }
+      StartDate: { type: datetime, nullable: false }
+      EndDate: { type: datetime, nullable: true }
+      DueDate: { type: datetime, nullable: false }
+      ScrapReasonID:
+        type: smallint
+        nullable: true
+        fk: Production.ScrapReason.ScrapReasonID
+        description: "Reason for scrapped units. NULL if ScrappedQty = 0."
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Production.WorkOrderRouting:
+    description: >
+      Step-by-step routing of each WorkOrder through production Locations.
+      OperationSequence defines the order of steps.
+      Stores planned vs actual start/end times, labour hours, and machine hours.
+      ActualCost = ActualResourceHrs × Location.CostRate.
+      PlannedCost = standard cost estimate before production starts.
+    primary_key: [WorkOrderID, ProductID, OperationSequence]
+    columns:
+      WorkOrderID:
+        type: int
+        nullable: false
+        fk: Production.WorkOrder.WorkOrderID
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      OperationSequence: { type: smallint, nullable: false, description: "Step number in the routing sequence." }
+      LocationID:
+        type: smallint
+        nullable: false
+        fk: Production.Location.LocationID
+        description: "Workstation/area where this step is performed."
+      ScheduledStartDate: { type: datetime, nullable: false }
+      ScheduledEndDate: { type: datetime, nullable: false }
+      ActualStartDate: { type: datetime, nullable: true }
+      ActualEndDate: { type: datetime, nullable: true }
+      ActualResourceHrs: { type: decimal(9,4), nullable: true, description: "Actual machine + labour hours consumed." }
+      PlannedCost: { type: money, nullable: false }
+      ActualCost: { type: money, nullable: true, description: "Actual cost = ActualResourceHrs × Location.CostRate." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+# ─────────────────────────────────────────────────────────
+# PURCHASING SCHEMA
+# ─────────────────────────────────────────────────────────
+
+  Purchasing.Vendor:
+    description: >
+      Supplier/vendor master. Shares BusinessEntityID with Person.BusinessEntity.
+      CreditRating: 1=Superior, 2=Excellent, 3=Above Average, 4=Average, 5=Below Average.
+      PreferredVendorStatus=1 → preferred for purchasing decisions.
+      ActiveFlag=0 → vendor no longer used; exclude from sourcing queries.
+      PurchasingWebServiceURL → EDI endpoint for automated ordering (may be NULL).
+    primary_key: BusinessEntityID
+    business_logic:
+      - "Filter ActiveFlag=1 for current active vendors."
+      - "Filter PreferredVendorStatus=1 for sourcing recommendations."
+      - "CreditRating 1 = best; 5 = worst."
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.BusinessEntity.BusinessEntityID
+        description: "Shared PK — Vendor inherits ID from BusinessEntity."
+      AccountNumber: { type: nvarchar(15), nullable: false, description: "Unique vendor account code." }
+      Name: { type: nvarchar(50), nullable: false }
+      CreditRating: { type: tinyint, nullable: false, description: "1=Superior, 2=Excellent, 3=Above Avg, 4=Average, 5=Below Avg." }
+      PreferredVendorStatus: { type: bit, nullable: false, description: "1=Preferred vendor for purchasing." }
+      ActiveFlag: { type: bit, nullable: false, description: "1=Active vendor. Filter on 1 to exclude retired vendors." }
+      PurchasingWebServiceURL: { type: nvarchar(1024), nullable: true, description: "EDI/web service endpoint for automated POs." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Purchasing.ProductVendor:
+    description: >
+      Vendor-product sourcing catalogue. Defines which vendors supply which products,
+      at what StandardPrice, with what AverageLeadTime and order quantity constraints.
+      LastReceiptCost and LastReceiptDate track the most recent actual purchase.
+      OnOrderQty = quantity currently on open POs with this vendor for this product.
+    primary_key: [ProductID, BusinessEntityID]
+    columns:
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+        description: "Product that can be sourced from this vendor."
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Purchasing.Vendor.BusinessEntityID
+        description: "Vendor/supplier offering this product."
+      AverageLeadTime: { type: int, nullable: false, description: "Average delivery lead time in days." }
+      StandardPrice: { type: money, nullable: false, description: "Vendor's standard unit price for this product." }
+      LastReceiptCost: { type: money, nullable: true, description: "Most recent actual purchase price paid." }
+      LastReceiptDate: { type: datetime, nullable: true, description: "Date of most recent receipt from this vendor." }
+      MinOrderQty: { type: int, nullable: false, description: "Vendor's minimum order quantity." }
+      MaxOrderQty: { type: int, nullable: false, description: "Vendor's maximum order quantity." }
+      OnOrderQty: { type: int, nullable: true, description: "Quantity currently on open POs with this vendor." }
+      UnitMeasureCode:
+        type: nchar(3)
+        nullable: false
+        fk: Production.UnitMeasure.UnitMeasureCode
+        description: "Unit in which the vendor sells this product."
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Purchasing.PurchaseOrderHeader:
+    description: >
+      Master header for supplier purchase orders.
+      Status: 1=Pending, 2=Approved, 3=Rejected, 4=Complete.
+      TotalDue is a computed column: SubTotal + TaxAmt + Freight.
+      RevisionNumber increments on every header update (optimistic concurrency).
+      EmployeeID is the AW buyer who created the PO (not the vendor contact).
+    primary_key: PurchaseOrderID
+    business_logic:
+      - "TotalDue is computed: SubTotal + TaxAmt + Freight."
+      - "Filter Status=2 (Approved) or Status=4 (Complete) for valid POs."
+      - "RevisionNumber tracks edit count — useful for detecting frequently-amended POs."
+    columns:
+      PurchaseOrderID: { type: int (identity), nullable: false }
+      RevisionNumber: { type: tinyint, nullable: false, description: "Increments on each PO update." }
+      Status: { type: tinyint, nullable: false, description: "1=Pending, 2=Approved, 3=Rejected, 4=Complete." }
+      EmployeeID:
+        type: int
+        nullable: false
+        fk: HumanResources.Employee.BusinessEntityID
+        description: "AW buyer/employee who created the PO."
+      VendorID:
+        type: int
+        nullable: false
+        fk: Purchasing.Vendor.BusinessEntityID
+        description: "Supplier the order is placed with."
+      ShipMethodID:
+        type: int
+        nullable: false
+        fk: Purchasing.ShipMethod.ShipMethodID
+        description: "Inbound freight carrier for this PO."
+      OrderDate: { type: datetime, nullable: false }
+      ShipDate: { type: datetime, nullable: true }
+      SubTotal: { type: money, nullable: false }
+      TaxAmt: { type: money, nullable: false }
+      Freight: { type: money, nullable: false }
+      TotalDue: { type: money, nullable: false, computed: true, description: "Computed: SubTotal + TaxAmt + Freight." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Purchasing.PurchaseOrderDetail:
+    description: >
+      Line items for each purchase order.
+      LineTotal is computed: OrderQty × UnitPrice.
+      Business rule: StockedQty = ReceivedQty - RejectedQty (goods accepted into inventory).
+      DueDate drives procurement scheduling per line.
+    primary_key: [PurchaseOrderID, PurchaseOrderDetailID]
+    business_logic:
+      - "LineTotal is computed: OrderQty * UnitPrice."
+      - "Accepted goods = ReceivedQty - RejectedQty = StockedQty."
+    columns:
+      PurchaseOrderID:
+        type: int
+        nullable: false
+        fk: Purchasing.PurchaseOrderHeader.PurchaseOrderID
+        description: "Parent purchase order."
+      PurchaseOrderDetailID: { type: int (identity), nullable: false }
+      DueDate: { type: datetime, nullable: false }
+      OrderQty: { type: smallint, nullable: false }
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+        description: "Product being purchased."
+      UnitPrice: { type: money, nullable: false }
+      LineTotal: { type: money, nullable: false, computed: true, description: "Computed: OrderQty * UnitPrice." }
+      ReceivedQty: { type: decimal(8,2), nullable: false, description: "Quantity received from vendor." }
+      RejectedQty: { type: decimal(8,2), nullable: false, description: "Quantity rejected on receipt (quality failure)." }
+      StockedQty: { type: decimal(8,2), nullable: false, computed: true, description: "Computed: ReceivedQty - RejectedQty. Accepted into inventory." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Purchasing.ShipMethod:
+    description: >
+      Inbound and outbound shipping method/carrier lookup.
+      ShipBase = flat base fee; ShipRate = per-pound variable rate.
+      Used by both PurchaseOrderHeader (inbound) and SalesOrderHeader (outbound).
+    primary_key: ShipMethodID
+    columns:
+      ShipMethodID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false, description: "Carrier name (e.g. 'ZY - EXPRESS', 'CARGO TRANSPORT 5')." }
+      ShipBase: { type: money, nullable: false, description: "Flat base shipping fee." }
+      ShipRate: { type: money, nullable: false, description: "Per-pound variable shipping rate." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+# ─────────────────────────────────────────────────────────
+# SALES SCHEMA
+# ─────────────────────────────────────────────────────────
+
+  Sales.SalesTerritory:
+    description: >
+      Geographic sales territory master. Each territory belongs to a
+      Group: 'North America', 'Europe', or 'Pacific'.
+      SalesYTD / SalesLastYear and CostYTD / CostLastYear enable territory-level P&L.
+      Referenced by Customer, SalesPerson, SalesOrderHeader, and StateProvince.
+    primary_key: TerritoryID
+    columns:
+      TerritoryID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      CountryRegionCode:
+        type: nvarchar(3)
+        nullable: false
+        fk: Person.CountryRegion.CountryRegionCode
+      Group: { type: nvarchar(50), nullable: false, description: "North America | Europe | Pacific." }
+      SalesYTD: { type: money, nullable: false }
+      SalesLastYear: { type: money, nullable: false }
+      CostYTD: { type: money, nullable: false }
+      CostLastYear: { type: money, nullable: false }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.Customer:
+    description: >
+      Customer master. Two mutually exclusive types:
+      B2C: PersonID IS NOT NULL, StoreID IS NULL → individual consumer.
+      B2B: StoreID IS NOT NULL, PersonID IS NULL → business/reseller store.
+      AccountNumber is a computed, human-readable ID (e.g. 'AW00000001').
+      TerritoryID links to the customer's sales region.
+    primary_key: CustomerID
+    business_logic:
+      - "B2C individual: PersonID IS NOT NULL AND StoreID IS NULL."
+      - "B2B store: StoreID IS NOT NULL AND PersonID IS NULL."
+      - "JOIN to Person.Person (via PersonID) for individual customer names."
+      - "JOIN to Sales.Store (via StoreID) for business customer names."
+    columns:
+      CustomerID: { type: int (identity), nullable: false }
+      PersonID:
+        type: int
+        nullable: true
+        fk: Person.Person.BusinessEntityID
+        description: "Individual consumer customer. NULL for store/B2B customers."
+      StoreID:
+        type: int
+        nullable: true
+        fk: Sales.Store.BusinessEntityID
+        description: "Store/business customer. NULL for individual/B2C customers."
+      TerritoryID:
+        type: int
+        nullable: true
+        fk: Sales.SalesTerritory.TerritoryID
+      AccountNumber:
+        type: varchar(10)
+        nullable: false
+        computed: true
+        description: "Computed human-readable account code (e.g. AW00000001)."
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.Store:
+    description: >
+      Business customer (retail store) master.
+      Demographics is an XML column with store attributes: AnnualSales, AnnualRevenue,
+      NumberEmployees, SquareFeet, YearOpened, BankName, BusinessType, Brands, etc.
+      SalesPersonID links the store to its assigned AW sales representative.
+    primary_key: BusinessEntityID
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.BusinessEntity.BusinessEntityID
+        description: "Shared PK — Store inherits ID from BusinessEntity."
+      Name: { type: nvarchar(50), nullable: false }
+      SalesPersonID:
+        type: int
+        nullable: true
+        fk: Sales.SalesPerson.BusinessEntityID
+        description: "AW sales rep responsible for this store account."
+      Demographics: { type: xml, nullable: true, description: "XML store attributes: AnnualSales, NumberEmployees, BusinessType, etc." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesPerson:
+    description: >
+      Sales representative performance data. Stores quota, bonus thresholds,
+      commission percentage, and YTD sales figures.
+      Linked to HumanResources.Employee via BusinessEntityID.
+      JOIN to Person.Person for the rep's name.
+      TerritoryID is the primary territory assigned; see SalesTerritoryHistory for all.
+    primary_key: BusinessEntityID
+    business_logic:
+      - "JOIN Sales.SalesPerson → HumanResources.Employee → Person.Person for rep names."
+      - "SalesYTD and SalesLastYear are running totals maintained by triggers."
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: HumanResources.Employee.BusinessEntityID
+        description: "Sales rep — must also be an Employee."
+      TerritoryID:
+        type: int
+        nullable: true
+        fk: Sales.SalesTerritory.TerritoryID
+        description: "Primary territory. NULL = unassigned."
+      SalesQuota: { type: money, nullable: true }
+      Bonus: { type: money, nullable: false }
+      CommissionPct: { type: smallmoney, nullable: false, description: "Commission rate as a decimal (e.g. 0.012 = 1.2%)." }
+      SalesYTD: { type: money, nullable: false, description: "Year-to-date sales total (maintained by trigger)." }
+      SalesLastYear: { type: money, nullable: false, description: "Prior year total sales." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesPersonQuotaHistory:
+    description: >
+      Time-series of quarterly quota assignments per SalesPerson.
+      Each row = a quota amount effective from QuotaDate.
+      Used to compute quota attainment trends over time.
+    primary_key: [BusinessEntityID, QuotaDate]
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Sales.SalesPerson.BusinessEntityID
+      QuotaDate: { type: datetime, nullable: false }
+      SalesQuota: { type: money, nullable: false }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesTerritoryHistory:
+    description: >
+      Audit trail of territory assignments per SalesPerson over time.
+      EndDate IS NULL = this is the current territory assignment.
+    primary_key: [BusinessEntityID, StartDate, TerritoryID]
+    business_logic:
+      - "Current territory = WHERE EndDate IS NULL per BusinessEntityID."
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Sales.SalesPerson.BusinessEntityID
+      TerritoryID:
+        type: int
+        nullable: false
+        fk: Sales.SalesTerritory.TerritoryID
+      StartDate: { type: datetime, nullable: false }
+      EndDate: { type: datetime, nullable: true, description: "NULL = currently active territory assignment." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesOrderHeader:
+    description: >
+      Master record for every customer order.
+      Status: 1=InProcess, 2=Approved, 3=Backordered, 4=Rejected, 5=Shipped, 6=Cancelled.
+      OnlineOrderFlag: 1=Web order (no SalesPersonID), 0=Sales-rep entered.
+      TotalDue is computed: SubTotal + TaxAmt + Freight.
+      Revenue queries should filter Status IN (2, 5) for approved/shipped orders.
+      RevisionNumber increments on each modification — useful for auditing changes.
+    primary_key: SalesOrderID
+    business_logic:
+      - "Revenue queries: filter Status IN (2, 5) — Approved and Shipped."
+      - "TotalDue is computed: SubTotal + TaxAmt + Freight."
+      - "Online orders: OnlineOrderFlag=1 have NULL SalesPersonID."
+      - "SalesOrderNumber is computed and human-readable (e.g. 'SO43659')."
+    columns:
+      SalesOrderID: { type: int (identity), nullable: false }
+      RevisionNumber: { type: tinyint, nullable: false, description: "Edit count; increments on each update." }
+      OrderDate: { type: datetime, nullable: false }
+      DueDate: { type: datetime, nullable: false }
+      ShipDate: { type: datetime, nullable: true }
+      Status: { type: tinyint, nullable: false, description: "1=InProcess, 2=Approved, 3=Backordered, 4=Rejected, 5=Shipped, 6=Cancelled." }
+      OnlineOrderFlag: { type: bit, nullable: false, description: "1=Web/online order, 0=Manual/sales-rep order." }
+      SalesOrderNumber:
+        type: nvarchar(25)
+        nullable: false
+        computed: true
+        description: "Computed human-readable order number (e.g. SO43659)."
+      PurchaseOrderNumber: { type: nvarchar(25), nullable: true, description: "Customer's PO reference number." }
+      AccountNumber: { type: nvarchar(15), nullable: true }
+      CustomerID:
+        type: int
+        nullable: false
+        fk: Sales.Customer.CustomerID
+      SalesPersonID:
+        type: int
+        nullable: true
+        fk: Sales.SalesPerson.BusinessEntityID
+        description: "NULL for online orders."
+      TerritoryID:
+        type: int
+        nullable: true
+        fk: Sales.SalesTerritory.TerritoryID
+      BillToAddressID:
+        type: int
+        nullable: false
+        fk: Person.Address.AddressID
+        description: "Billing address for this order."
+      ShipToAddressID:
+        type: int
+        nullable: false
+        fk: Person.Address.AddressID
+        description: "Delivery/shipping address."
+      ShipMethodID:
+        type: int
+        nullable: false
+        fk: Purchasing.ShipMethod.ShipMethodID
+        description: "Outbound carrier used."
+      CreditCardID:
+        type: int
+        nullable: true
+        fk: Sales.CreditCard.CreditCardID
+        description: "NULL for offline/invoiced orders."
+      CreditCardApprovalCode: { type: varchar(15), nullable: true }
+      CurrencyRateID:
+        type: int
+        nullable: true
+        fk: Sales.CurrencyRate.CurrencyRateID
+        description: "FX rate applied for foreign-currency orders. NULL for USD orders."
+      SubTotal: { type: money, nullable: false }
+      TaxAmt: { type: money, nullable: false }
+      Freight: { type: money, nullable: false }
+      TotalDue: { type: money, nullable: false, computed: true, description: "Computed: SubTotal + TaxAmt + Freight." }
+      Comment: { type: nvarchar(128), nullable: true }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesOrderDetail:
+    description: >
+      Line-item details for each sales order.
+      LineTotal is computed: OrderQty × UnitPrice × (1 - UnitPriceDiscount).
+      SpecialOfferID + ProductID is a composite FK to SpecialOfferProduct,
+      enforcing that any discount code is only valid for eligible products.
+      SpecialOfferID=1 always means 'No Discount'.
+      CarrierTrackingNumber enables per-line parcel tracking.
+    primary_key: [SalesOrderID, SalesOrderDetailID]
+    business_logic:
+      - "LineTotal is computed: OrderQty * UnitPrice * (1.0 - UnitPriceDiscount)."
+      - "SpecialOfferID=1 = No Discount. Any other value = promotional discount."
+      - "JOIN to SpecialOfferProduct(SpecialOfferID, ProductID) to validate discount eligibility."
+    columns:
+      SalesOrderID:
+        type: int
+        nullable: false
+        fk: Sales.SalesOrderHeader.SalesOrderID
+        description: "Parent sales order."
+      SalesOrderDetailID: { type: int (identity), nullable: false }
+      CarrierTrackingNumber: { type: nvarchar(25), nullable: true }
+      OrderQty: { type: smallint, nullable: false }
+      ProductID:
+        type: int
+        nullable: false
+        fk: Sales.SpecialOfferProduct.ProductID
+        description: "Product sold. Composite FK with SpecialOfferID."
+      SpecialOfferID:
+        type: int
+        nullable: false
+        fk: Sales.SpecialOfferProduct.SpecialOfferID
+        description: "Discount offer applied. ID=1 = No Discount. Composite FK with ProductID."
+      UnitPrice: { type: money, nullable: false }
+      UnitPriceDiscount: { type: money, nullable: false, description: "Discount rate as decimal (e.g. 0.02 = 2% off). 0 = no discount." }
+      LineTotal:
+        type: numeric(38,6)
+        nullable: false
+        computed: true
+        description: "Computed: OrderQty * UnitPrice * (1 - UnitPriceDiscount)."
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesOrderHeaderSalesReason:
+    description: >
+      Bridge recording one or more purchase motivations per sales order.
+      A single order can have multiple reasons (e.g. 'Price' AND 'Quality').
+      Used for marketing attribution and campaign ROI analysis.
+    primary_key: [SalesOrderID, SalesReasonID]
+    columns:
+      SalesOrderID:
+        type: int
+        nullable: false
+        fk: Sales.SalesOrderHeader.SalesOrderID
+      SalesReasonID:
+        type: int
+        nullable: false
+        fk: Sales.SalesReason.SalesReasonID
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesReason:
+    description: >
+      Lookup of purchase motivations.
+      Name examples: 'Price', 'Quality', 'Review', 'On Promotion',
+      'Magazine Advertisement', 'Demo Event', 'Manufacturer'.
+      ReasonType: 'Marketing', 'Other'.
+    primary_key: SalesReasonID
+    columns:
+      SalesReasonID: { type: int (identity), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      ReasonType: { type: nvarchar(50), nullable: false, description: "Marketing | Other." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SpecialOffer:
+    description: >
+      Promotional discounts catalogue.
+      DiscountPct is applied per line in SalesOrderDetail.
+      StartDate/EndDate define the active promotion window.
+      Type: 'Seasonal Discount', 'Volume Discount', 'Discontinued Product',
+            'Reseller', 'Cross Sell', 'Customer', 'No Discount'.
+      Category: 'Customer', 'Reseller', 'Employee', 'No Discount'.
+      MinQty/MaxQty define eligibility thresholds.
+      SpecialOfferID=1 is always the 'No Discount' sentinel row.
+    primary_key: SpecialOfferID
+    business_logic:
+      - "SpecialOfferID=1 is the 'No Discount' sentinel. Never delete or modify it."
+      - "Active promotions: WHERE StartDate <= GETDATE() AND EndDate >= GETDATE()."
+    columns:
+      SpecialOfferID: { type: int (identity), nullable: false }
+      Description: { type: nvarchar(255), nullable: false }
+      DiscountPct: { type: smallmoney, nullable: false, description: "Discount as a decimal rate (e.g. 0.02 = 2%)." }
+      Type: { type: nvarchar(50), nullable: false }
+      Category: { type: nvarchar(50), nullable: false, description: "Customer | Reseller | Employee | No Discount." }
+      StartDate: { type: datetime, nullable: false }
+      EndDate: { type: datetime, nullable: false }
+      MinQty: { type: int, nullable: false, description: "Minimum order quantity to qualify for the discount." }
+      MaxQty: { type: int, nullable: true, description: "Maximum quantity eligible for discount. NULL = no cap." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SpecialOfferProduct:
+    description: >
+      Bridge restricting which Products are eligible for which SpecialOffers.
+      SalesOrderDetail references (SpecialOfferID, ProductID) here as a
+      composite FK to enforce discount validity per product.
+    primary_key: [SpecialOfferID, ProductID]
+    columns:
+      SpecialOfferID:
+        type: int
+        nullable: false
+        fk: Sales.SpecialOffer.SpecialOfferID
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+        description: "Product eligible for this offer."
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.Currency:
+    description: "ISO 4217 currency code lookup (e.g. 'USD', 'EUR', 'GBP', 'CAD', 'AUD')."
+    primary_key: CurrencyCode
+    columns:
+      CurrencyCode: { type: nchar(3), nullable: false }
+      Name: { type: nvarchar(50), nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.CountryRegionCurrency:
+    description: "Maps country/region codes to the currencies accepted there. A country may have multiple currencies."
+    primary_key: [CountryRegionCode, CurrencyCode]
+    columns:
+      CountryRegionCode:
+        type: nvarchar(3)
+        nullable: false
+        fk: Person.CountryRegion.CountryRegionCode
+      CurrencyCode:
+        type: nchar(3)
+        nullable: false
+        fk: Sales.Currency.CurrencyCode
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.CurrencyRate:
+    description: >
+      Daily FX exchange rates between USD (base) and foreign currencies.
+      AverageRate = used for P&L conversion.
+      EndOfDayRate = used for balance-sheet reporting.
+      CurrencyRateDate is the effective date of the rate.
+    primary_key: CurrencyRateID
+    columns:
+      CurrencyRateID: { type: int (identity), nullable: false }
+      CurrencyRateDate: { type: datetime, nullable: false }
+      FromCurrencyCode:
+        type: nchar(3)
+        nullable: false
+        fk: Sales.Currency.CurrencyCode
+        description: "Source currency (typically USD)."
+      ToCurrencyCode:
+        type: nchar(3)
+        nullable: false
+        fk: Sales.Currency.CurrencyCode
+        description: "Target foreign currency."
+      AverageRate: { type: money, nullable: false, description: "Used for P&L/income statement conversion." }
+      EndOfDayRate: { type: money, nullable: false, description: "Used for balance-sheet date conversion." }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.CreditCard:
+    description: >
+      Tokenised credit card vault. Stores card type, masked number, and expiry.
+      CardNumber stores the last 4 digits only — never a full PAN.
+      CardType: 'SuperiorCard', 'Distinguish', 'ColonialVoice', 'Vista'.
+    primary_key: CreditCardID
+    columns:
+      CreditCardID: { type: int (identity), nullable: false }
+      CardType: { type: nvarchar(50), nullable: false, description: "Card brand: SuperiorCard | Distinguish | ColonialVoice | Vista." }
+      CardNumber: { type: nvarchar(25), nullable: false, description: "Masked/tokenised card number (last 4 digits)." }
+      ExpMonth: { type: tinyint, nullable: false }
+      ExpYear: { type: smallint, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.PersonCreditCard:
+    description: "Bridge linking Person records to their CreditCard(s). One person can register multiple cards."
+    primary_key: [BusinessEntityID, CreditCardID]
+    columns:
+      BusinessEntityID:
+        type: int
+        nullable: false
+        fk: Person.Person.BusinessEntityID
+      CreditCardID:
+        type: int
+        nullable: false
+        fk: Sales.CreditCard.CreditCardID
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.SalesTaxRate:
+    description: >
+      Tax rates by StateProvince.
+      TaxType: 1=State tax, 2=County tax, 3=City tax.
+      TaxRate is a percentage value (e.g. 8.75 means 8.75%).
+      Multiple rows may exist per StateProvince for different TaxTypes.
+    primary_key: SalesTaxRateID
+    columns:
+      SalesTaxRateID: { type: int (identity), nullable: false }
+      StateProvinceID:
+        type: int
+        nullable: false
+        fk: Person.StateProvince.StateProvinceID
+      TaxType: { type: tinyint, nullable: false, description: "1=State, 2=County, 3=City." }
+      TaxRate: { type: smallmoney, nullable: false, description: "Tax rate as a percentage (e.g. 8.75 = 8.75%)." }
+      Name: { type: nvarchar(50), nullable: false, description: "Descriptive name (e.g. 'Canadian GST')." }
+      rowguid: { type: uniqueidentifier, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+  Sales.ShoppingCartItem:
+    description: >
+      Transient table for unpurchased items in web shopping carts.
+      ShoppingCartID is a session identifier (not a FK — anonymous sessions allowed).
+      DateCreated enables abandoned-cart analysis.
+      Rows are deleted when the customer checks out or abandons the session.
+    primary_key: ShoppingCartItemID
+    columns:
+      ShoppingCartItemID: { type: int (identity), nullable: false }
+      ShoppingCartID: { type: nvarchar(50), nullable: false, description: "Session or user cart identifier (not a FK)." }
+      Quantity: { type: int, nullable: false }
+      ProductID:
+        type: int
+        nullable: false
+        fk: Production.Product.ProductID
+      DateCreated: { type: datetime, nullable: false }
+      ModifiedDate: { type: datetime, nullable: false }
+
+# ─────────────────────────────────────────────────────────
+# KEY VIEWS (for RAG agent awareness)
+# These are read-only and pre-join common patterns
+# ─────────────────────────────────────────────────────────
+
+views:
+
+  Production.vProductAndDescription:
+    description: >
+      Pre-joined view: Product + ProductModel + ProductDescription + Culture.
+      Use for 'find product description in language X' queries.
+      Filter on CultureID (e.g. 'en' for English).
+    columns:
+      ProductID: int
+      Name: nvarchar
+      ProductModel: nvarchar
+      CultureID: nchar
+      Description: nvarchar
+
+  Production.vProductModelCatalogDescription:
+    description: "Flattened XML catalogue description per ProductModel. Contains marketing attributes like Wheel, Saddle, Color, Material."
+    columns:
+      ProductModelID: int
+      Name: nvarchar
+      Summary: nvarchar
+      Manufacturer: nvarchar
+      Color: nvarchar
+      ProductLine: nvarchar
+      Style: nvarchar
+      RiderExperience: nvarchar
+      WarrantyPeriod: nvarchar
+      WarrantyDescription: nvarchar
+      NoOfYears: nvarchar
+      MaintenanceDescription: nvarchar
+
+  Production.vProductModelInstructions:
+    description: "Flattened assembly instruction steps per ProductModel and LocationID. Each row = one step at one location."
+    columns:
+      ProductModelID: int
+      Name: nvarchar
+      Instructions: nvarchar
+      LocationID: int
+      SetupHours: decimal
+      MachineHours: decimal
+      LaborHours: decimal
+      LotSize: int
+      Step: nvarchar
+
+  Purchasing.vVendorWithAddresses:
+    description: "Pre-joined view: Vendor + BusinessEntityAddress + Address + AddressType + StateProvince + CountryRegion."
+    columns:
+      BusinessEntityID: int
+      Name: nvarchar
+      AddressType: nvarchar
+      AddressLine1: nvarchar
+      AddressLine2: nvarchar
+      City: nvarchar
+      StateProvinceName: nvarchar
+      PostalCode: nvarchar
+      CountryRegionName: nvarchar
+
+  Purchasing.vVendorWithContacts:
+    description: "Pre-joined view: Vendor + BusinessEntityContact + Person + EmailAddress + PersonPhone."
+    columns:
+      BusinessEntityID: int
+      Name: nvarchar
+      ContactType: nvarchar
+      Title: nvarchar
+      FirstName: nvarchar
+      MiddleName: nvarchar
+      LastName: nvarchar
+      Suffix: nvarchar
+      PhoneNumber: nvarchar
+      PhoneNumberType: nvarchar
+      EmailAddress: nvarchar
+      EmailPromotion: int
+
+  Sales.vIndividualCustomer:
+    description: "Pre-joined view for individual (B2C) customers: Customer + Person + Address + EmailAddress + PersonPhone."
+    columns:
+      BusinessEntityID: int
+      Title: nvarchar
+      FirstName: nvarchar
+      MiddleName: nvarchar
+      LastName: nvarchar
+      Suffix: nvarchar
+      PhoneNumber: nvarchar
+      PhoneNumberType: nvarchar
+      EmailAddress: nvarchar
+      EmailPromotion: int
+      AddressLine1: nvarchar
+      AddressLine2: nvarchar
+      City: nvarchar
+      StateProvinceName: nvarchar
+      PostalCode: nvarchar
+      CountryRegionName: nvarchar
+      AddressType: nvarchar
+      Demographics: xml
+
+  Sales.vPersonDemographics:
+    description: "Flattened XML Demographics column from Person.Person for individual customers. Used for segmentation."
+    columns:
+      BusinessEntityID: int
+      TotalPurchaseYTD: money
+      DateFirstPurchase: datetime
+      BirthDate: datetime
+      MaritalStatus: nvarchar
+      YearlyIncome: nvarchar
+      Gender: nvarchar
+      TotalChildren: int
+      NumberChildrenAtHome: int
+      Education: nvarchar
+      Occupation: nvarchar
+      HomeOwnerFlag: bit
+      NumberCarsOwned: int
+
+  Sales.vSalesPerson:
+    description: "Pre-joined view: SalesPerson + Employee + Person + Address + EmailAddress + SalesTerritory."
+    columns:
+      BusinessEntityID: int
+      Title: nvarchar
+      FirstName: nvarchar
+      MiddleName: nvarchar
+      LastName: nvarchar
+      Suffix: nvarchar
+      JobTitle: nvarchar
+      PhoneNumber: nvarchar
+      PhoneNumberType: nvarchar
+      EmailAddress: nvarchar
+      EmailPromotion: int
+      AddressLine1: nvarchar
+      AddressLine2: nvarchar
+      City: nvarchar
+      StateProvinceName: nvarchar
+      PostalCode: nvarchar
+      CountryRegionName: nvarchar
+      TerritoryName: nvarchar
+      TerritoryGroup: nvarchar
+      SalesQuota: money
+      SalesYTD: money
+      SalesLastYear: money
+
+  Sales.vSalesPersonSalesByFiscalYears:
+    description: >
+      Pivoted view of SalesPerson sales by fiscal year.
+      Columns 2002, 2003, 2004 represent fiscal year sales totals.
+      Used for multi-year sales rep performance comparisons.
+    columns:
+      SalesPersonID: int
+      FullName: nvarchar
+      JobTitle: nvarchar
+      SalesTerritory: nvarchar
+      '2002': money
+      '2003': money
+      '2004': money
+
+  Sales.vStoreWithAddresses:
+    description: "Pre-joined view: Store + BusinessEntityAddress + Address + AddressType."
+    columns:
+      BusinessEntityID: int
+      Name: nvarchar
+      AddressType: nvarchar
+      AddressLine1: nvarchar
+      AddressLine2: nvarchar
+      City: nvarchar
+      StateProvinceName: nvarchar
+      PostalCode: nvarchar
+      CountryRegionName: nvarchar
+
+  Sales.vStoreWithContacts:
+    description: "Pre-joined view: Store + BusinessEntityContact + Person + EmailAddress + PersonPhone."
+    columns:
+      BusinessEntityID: int
+      Name: nvarchar
+      ContactType: nvarchar
+      Title: nvarchar
+      FirstName: nvarchar
+      MiddleName: nvarchar
+      LastName: nvarchar
+      Suffix: nvarchar
+      PhoneNumber: nvarchar
+      PhoneNumberType: nvarchar
+      EmailAddress: nvarchar
+      EmailPromotion: int
+
+  Sales.vStoreWithDemographics:
+    description: "Flattened XML Demographics from Sales.Store. Used for store segmentation and territory analysis."
+    columns:
+      BusinessEntityID: int
+      Name: nvarchar
+      AnnualSales: money
+      AnnualRevenue: money
+      BankName: nvarchar
+      BusinessType: nvarchar
+      YearOpened: int
+      Specialty: nvarchar
+      SquareFeet: int
+      Brands: nvarchar
+      Internet: nvarchar
+      NumberEmployees: int
+
+# ─────────────────────────────────────────────────────────
+# GLOBAL BUSINESS LOGIC
+# Rules the agent must follow for any query
+# ─────────────────────────────────────────────────────────
+
+global_business_logic:
+
+  entity_supertype_pattern: >
+    Person.BusinessEntity is the root supertype. Person, Store, Vendor, and Employee
+    all share their PK (BusinessEntityID) with BusinessEntity.
+    To get an employee's name: JOIN HumanResources.Employee e
+    JOIN Person.Person p ON e.BusinessEntityID = p.BusinessEntityID.
+    Never assume name columns exist on Employee or Vendor tables.
+
+  get_employee_name: >
+    Employee names are in Person.Person, not HumanResources.Employee.
+    Required JOIN chain: HumanResources.Employee → Person.Person (on BusinessEntityID).
+    Optional extension for full contact: → Person.EmailAddress, Person.PersonPhone.
+
+  current_department: >
+    HumanResources.EmployeeDepartmentHistory.EndDate IS NULL = current department.
+    Always add this filter. Without it you get all historical assignments.
+
+  current_pay_rate: >
+    Current pay = MAX(RateChangeDate) per BusinessEntityID in EmployeePayHistory.
+    There is no EndDate column — use GROUP BY + MAX or ROW_NUMBER().
+
+  current_product_price: >
+    Use Production.ProductListPriceHistory WHERE EndDate IS NULL for current retail price.
+    Product.ListPrice is a snapshot that may be stale.
+
+  current_product_cost: >
+    Use Production.ProductCostHistory WHERE EndDate IS NULL for current standard cost.
+    Product.StandardCost is a snapshot that may be stale.
+
+  sales_order_status: >
+    Sales.SalesOrderHeader.Status codes:
+    1=InProcess | 2=Approved | 3=Backordered | 4=Rejected | 5=Shipped | 6=Cancelled.
+    Revenue reporting: filter Status IN (2, 5).
+    Exclude Status IN (4, 6) for cancelled/rejected orders.
+
+  purchase_order_status: >
+    Purchasing.PurchaseOrderHeader.Status:
+    1=Pending | 2=Approved | 3=Rejected | 4=Complete.
+    Valid spend queries: Status IN (2, 4).
+
+  individual_vs_store_customer: >
+    Sales.Customer: PersonID IS NOT NULL AND StoreID IS NULL → B2C individual.
+    Sales.Customer: StoreID IS NOT NULL AND PersonID IS NULL → B2B store.
+    These are mutually exclusive. Never assume a customer has both.
+
+  discount_enforcement: >
+    Sales.SalesOrderDetail references Sales.SpecialOfferProduct(SpecialOfferID, ProductID)
+    as a composite FK. SpecialOfferID=1 always means 'No Discount' — this is a sentinel row.
+    To find discounted lines: WHERE SpecialOfferID <> 1.
+
+  bom_recursion: >
+    Production.BillOfMaterials is a recursive structure.
+    ProductAssemblyID IS NULL = top-level finished good.
+    Use: dbo.uspGetBillOfMaterials(@ProductID, @CheckDate) or a recursive CTE.
+    Filter StartDate <= GETDATE() AND (EndDate IS NULL OR EndDate > GETDATE()) for
+    currently active components.
+
+  transaction_type_routing: >
+    Production.TransactionHistory.TransactionType:
+    'W' → ReferenceOrderID = Production.WorkOrder.WorkOrderID.
+    'S' → ReferenceOrderID = Sales.SalesOrderHeader.SalesOrderID.
+    'P' → ReferenceOrderID = Purchasing.PurchaseOrderHeader.PurchaseOrderID.
+    Always join through the correct table based on TransactionType.
+
+  complete_transaction_history: >
+    For full transaction history across all time, UNION ALL
+    Production.TransactionHistory and Production.TransactionHistoryArchive.
+    They have identical schemas.
+
+  active_products_only: >
+    For customer-facing product queries:
+    WHERE FinishedGoodsFlag = 1 AND SellEndDate IS NULL.
+    FinishedGoodsFlag=0 = internal component; SellEndDate IS NOT NULL = discontinued.
+
+  vendor_active_preferred: >
+    Purchasing.Vendor: ActiveFlag=1 for current vendors.
+    PreferredVendorStatus=1 for preferred sourcing.
+    CreditRating: 1=best (Superior), 5=worst (Below Average).
+
+  makeflag_routing: >
+    Production.Product.MakeFlag=1 → manufactured in-house → has WorkOrder records.
+    Production.Product.MakeFlag=0 → purchased → has PurchaseOrderDetail records.
+    Never look for a WorkOrder on a purchased product or vice versa.
+
+  linetotal_computation: >
+    Sales.SalesOrderDetail.LineTotal (computed) = OrderQty * UnitPrice * (1 - UnitPriceDiscount).
+    Purchasing.PurchaseOrderDetail.LineTotal (computed) = OrderQty * UnitPrice.
+    These are computed columns — do not manually recalculate in queries; SELECT LineTotal directly.
+
+  address_resolution: >
+    To resolve a shipping or billing address from SalesOrderHeader:
+    JOIN Person.Address ON SalesOrderHeader.ShipToAddressID = Address.AddressID.
+    Then JOIN Person.StateProvince and Person.CountryRegion for full address.
+    Do NOT join through BusinessEntityAddress for order addresses.

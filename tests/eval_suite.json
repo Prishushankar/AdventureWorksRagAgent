@@ -1,0 +1,182 @@
+[
+  {
+    "query": "which employees are currently in the Sales department?",
+    "expected_tables": [
+      "HumanResources.EmployeeDepartmentHistory",
+      "HumanResources.Department",
+      "HumanResources.Employee"
+    ]
+  },
+  {
+    "query": "what is the current pay rate for each employee?",
+    "expected_tables": [
+      "HumanResources.EmployeePayHistory",
+      "HumanResources.Employee"
+    ]
+  },
+  {
+    "query": "show me total revenue from shipped and approved orders",
+    "expected_tables": [
+      "Sales.SalesOrderHeader",
+      "Sales.SalesOrderDetail"
+    ]
+  },
+  {
+    "query": "which products are available for sale to customers?",
+    "expected_tables": [
+      "Production.Product",
+      "Production.ProductSubcategory",
+      "Production.ProductCategory"
+    ]
+  },
+  {
+    "query": "what is the current list price of each product?",
+    "expected_tables": [
+      "Production.ProductListPriceHistory"
+    ]
+  },
+  {
+    "query": "which vendors supply a given product and at what lead time?",
+    "expected_tables": [
+      "Purchasing.ProductVendor",
+      "Purchasing.Vendor"
+    ]
+  },
+  {
+    "query": "what are the components required to build a finished bike?",
+    "expected_tables": [
+      "Production.BillOfMaterials",
+      "Production.Product"
+    ]
+  },
+  {
+    "query": "show me all purchase orders that are pending or approved",
+    "expected_tables": [
+      "Purchasing.PurchaseOrderHeader",
+      "Purchasing.PurchaseOrderDetail"
+    ]
+  },
+  {
+    "query": "which sales orders were placed online vs through a sales rep?",
+    "expected_tables": [
+      "Sales.SalesOrderHeader"
+    ]
+  },
+  {
+    "query": "what discounts are currently active for which products?",
+    "expected_tables": [
+      "Sales.SpecialOffer",
+      "Sales.SpecialOfferProduct"
+    ]
+  },
+  {
+    "query": "how many units of each product are in stock across all locations?",
+    "expected_tables": [
+      "Production.ProductInventory",
+      "Production.Location"
+    ]
+  },
+  {
+    "query": "get the shipping address for a sales order",
+    "expected_tables": [
+      "Sales.SalesOrderHeader",
+      "Person.Address",
+      "Person.StateProvince",
+      "Person.CountryRegion"
+    ]
+  },
+  {
+    "query": "which work orders had scrapped units and why?",
+    "expected_tables": [
+      "Production.WorkOrder",
+      "Production.ScrapReason"
+    ]
+  },
+  {
+    "query": "what is the sales performance of each sales rep this year?",
+    "expected_tables": [
+      "Sales.SalesPerson",
+      "Sales.SalesOrderHeader"
+    ]
+  },
+  {
+    "query": "find the contact person and phone number for a vendor",
+    "expected_tables": [
+      "Purchasing.Vendor",
+      "Person.BusinessEntityContact",
+      "Person.Person",
+      "Person.PersonPhone"
+    ]
+  },
+  {
+    "query": "what is the billing address for a customer?",
+    "expected_tables": [
+      "Sales.Customer",
+      "Person.Address",
+      "Person.BusinessEntityAddress"
+    ]
+  },
+  {
+    "query": "show me all individual customers and their email addresses",
+    "expected_tables": [
+      "Sales.Customer",
+      "Person.Person",
+      "Person.EmailAddress"
+    ]
+  },
+  {
+    "query": "what products were manufactured in-house last month?",
+    "expected_tables": [
+      "Production.WorkOrder",
+      "Production.Product"
+    ]
+  },
+  {
+    "query": "which sales territory generated the most revenue?",
+    "expected_tables": [
+      "Sales.SalesTerritory",
+      "Sales.SalesOrderHeader"
+    ]
+  },
+  {
+    "query": "show me the standard manufacturing cost history for a product",
+    "expected_tables": [
+      "Production.ProductCostHistory"
+    ]
+  },
+  {
+    "query": "which employees report to a given manager?",
+    "expected_tables": [
+      "HumanResources.Employee",
+      "Person.Person"
+    ]
+  },
+  {
+    "query": "what shipping methods are available and what do they cost?",
+    "expected_tables": [
+      "Purchasing.ShipMethod"
+    ]
+  },
+  {
+    "query": "find all store customers and their assigned sales reps",
+    "expected_tables": [
+      "Sales.Customer",
+      "Sales.Store",
+      "Sales.SalesPerson"
+    ]
+  },
+  {
+    "query": "what are the tax rates by state for customer orders?",
+    "expected_tables": [
+      "Sales.SalesTaxRate",
+      "Person.StateProvince"
+    ]
+  },
+  {
+    "query": "show inventory transactions related to a specific sales order",
+    "expected_tables": [
+      "Production.TransactionHistory",
+      "Sales.SalesOrderHeader"
+    ]
+  }
+]
