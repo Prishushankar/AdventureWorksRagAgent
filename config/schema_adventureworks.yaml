@@ -1141,6 +1141,7 @@ tables:
       - "JOIN to Person.Person (via PersonID) for individual customer names."
       - "JOIN to Sales.Store (via StoreID) for business customer names."
       - "NO address columns exist on this table. For location queries, go through Person.BusinessEntityAddress → Person.Address → Person.StateProvince → Person.CountryRegion."
+      - "Customer name: ISNULL(s.Name, CONCAT(p.FirstName, ' ', p.LastName)) — use s.Name NOT s.Store.Name."
     columns:
       CustomerID: { type: int (identity), nullable: false }
       PersonID:

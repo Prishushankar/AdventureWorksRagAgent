@@ -5,7 +5,10 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
         "CRITICAL RULE: This table has NO address columns (no StateProvinceID, no AddressID, no City). "
         "To find a customer's location, you MUST go through Person.BusinessEntityAddress → Person.Address → Person.StateProvince. "
         "If you need to display or group by a customer, you MUST use a LEFT JOIN on both Sales.Store and Person.Person. "
-        "Use this exact logic in SELECT and GROUP BY: ISNULL(Store.Name, Person.FirstName + ' ' + Person.LastName) AS CustomerName.  Use this for customer-level order counting and grouping. Keywords: customer wise, total orders paid by customer, client volume."
+        "For customer name, use: ISNULL(s.Name, CONCAT(p.FirstName, ' ', p.LastName)) AS CustomerName "
+        "(where s is the alias for Sales.Store, p is the alias for Person.Person). "
+        "Do NOT double-qualify like s.Store.Name — just use s.Name. "
+        "Use this for customer-level order counting and grouping."
     ),
 
     "Person.BusinessEntity": (
@@ -869,6 +872,21 @@ BUSINESS_LOGIC: dict[str, str] = {
         "Person.CountryRegion (ON sp.CountryRegionCode = cr.CountryRegionCode). "
         "Then filter on cr.Name (country), sp.Name (state), a.City (city), or a.PostalCode. "
         "NEVER join Sales.Customer directly to Person.StateProvince or Person.Address — the FK does not exist."
+    ),
+    "customer_name_pattern": (
+        "Sales.Customer has NO Name column. To display a customer's name: "
+        "LEFT JOIN Sales.Store s ON c.StoreID = s.BusinessEntityID AND "
+        "LEFT JOIN Person.Person p ON c.PersonID = p.BusinessEntityID, then use: "
+        "ISNULL(s.Name, CONCAT(p.FirstName, ' ', p.LastName)) AS CustomerName. "
+        "CRITICAL: use s.Name NOT s.Store.Name — the alias replaces the table name. "
+        "For individual B2C customers only (no stores), a simple "
+        "JOIN Person.Person p ON c.PersonID = p.BusinessEntityID with CONCAT(p.FirstName, ' ', p.LastName) suffices."
+    ),
+    "alias_prefix_rule": (
+        "When you assign a table alias, use ONLY the alias to prefix columns. NEVER double-qualify. "
+        "WRONG: s.Store.Name, c.Customer.CustomerID, e.Employee.JobTitle. "
+        "CORRECT: s.Name, c.CustomerID, e.JobTitle. "
+        "The alias REPLACES the table name; do not repeat it."
     ),
 }
 
