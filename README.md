@@ -249,7 +249,7 @@ This runs 25 test queries, checks if the expected tables are retrieved, and outp
 
 ## Author
 
-**Prishu Shankar** — [GitHub](https://github.com/Prishushankar)
+**Priyanshu Shankar** — [GitHub](https://github.com/Prishushankar)
 
 ---
 
