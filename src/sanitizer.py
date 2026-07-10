@@ -5,8 +5,10 @@ def sanitize_sql(raw_sql: str) -> str:
     clean = re.sub(r'```sql\s*', '', raw_sql, flags=re.IGNORECASE)
     clean = re.sub(r'```\s*', '', clean)
 
-    clean = re.sub(r'(?i)^\s*USE\s+[a-zA-Z0-9_\[\]]+;?\s*', '', clean)
-    clean = re.sub(r'(?i)^\s*SET\s+NOCOUNT\s+ON;?\s*', '', clean)
+    clean = re.sub(r'(?i)\bUSE\s+[a-zA-Z0-9_\[\]]+\s*;?\s*', '', clean)
+    clean = re.sub(r'(?i)\bSET\s+NOCOUNT\s+ON\s*;?\s*', '', clean)
+    clean = re.sub(r'(?i)^\s*GO\s*$', '', clean, flags=re.MULTILINE)
+    clean = re.sub(r'(?i)\bGO\s*;', '', clean)
 
     year_range_match = re.search(
         r"OrderDate\s*(?:>=|>|BETWEEN)\s*'(\d{4})-(\d{2})-\d{2}'",
@@ -31,5 +33,6 @@ def sanitize_sql(raw_sql: str) -> str:
         flags=re.IGNORECASE,
     )
 
+    clean = re.sub(r'\n\s*\n', '\n', clean)
     clean = clean.strip().rstrip(';')
     return clean

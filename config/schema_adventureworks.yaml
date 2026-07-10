@@ -348,6 +348,7 @@ tables:
       - "JOIN HumanResources.Employee e JOIN Person.Person p ON e.BusinessEntityID = p.BusinessEntityID to get names."
       - "Filter CurrentFlag = 1 for active employees only."
       - "ManagerID is self-referencing FK — use recursive CTE or dbo.uspGetEmployeeManagers for hierarchy."
+      - "Employee OWNS BirthDate, HireDate, JobTitle, Gender, VacationHours, SickLeaveHours — NEVER use p.BirthDate or p.HireDate."
     columns:
       BusinessEntityID:
         type: int

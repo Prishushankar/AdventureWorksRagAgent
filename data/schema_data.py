@@ -74,7 +74,8 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
         "BirthDate, MaritalStatus (M/S), Gender (M/F), SalariedFlag (0=Hourly, 1=Salaried), "
         "VacationHours, SickLeaveHours. CurrentFlag=1 means active. "
         "Self-references via ManagerID for org-chart hierarchy. "
-        "JOIN to Person.Person on BusinessEntityID to get employee names."
+        "CRITICAL: BirthDate, HireDate, JobTitle, Gender, VacationHours, SickLeaveHours live HERE on Employee — "
+        "NOT on Person.Person. JOIN to Person.Person ONLY for FirstName/LastName."
     ),
     "HumanResources.EmployeeDepartmentHistory": (
         "Full audit trail of every department and shift assignment per employee. "
@@ -741,6 +742,14 @@ BUSINESS_LOGIC: dict[str, str] = {
         "Employee names are in Person.Person, NOT in HumanResources.Employee. "
         "Required JOIN: HumanResources.Employee → Person.Person ON BusinessEntityID. "
         "Extension for full contact: also JOIN Person.EmailAddress, Person.PersonPhone."
+    ),
+    "employee_column_ownership": (
+        "When joining HumanResources.Employee (e) with Person.Person (p), column ownership is STRICT: "
+        "Employee OWNS: BirthDate, HireDate, JobTitle, Gender, MaritalStatus, VacationHours, "
+        "SickLeaveHours, CurrentFlag, SalariedFlag, LoginID, NationalIDNumber, ManagerID. "
+        "Person OWNS: FirstName, LastName, MiddleName, Title, Suffix, PersonType, NameStyle. "
+        "NEVER use p.BirthDate, p.HireDate, p.JobTitle, p.Gender, or p.VacationHours — "
+        "these columns DO NOT EXIST on Person.Person. Always prefix columns with the correct alias."
     ),
     "current_employee_department": (
         "HumanResources.EmployeeDepartmentHistory.EndDate IS NULL = employee's CURRENT department. "
